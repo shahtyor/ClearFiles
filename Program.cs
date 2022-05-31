@@ -13,69 +13,76 @@ namespace ClearFiles
         {
             string log = DeleteFiles();
 
-            Program p = new Program();
             Console.WriteLine(log);
-            p.SendEmail(log);
+            SendEmail(log);
+            Console.WriteLine("\r\n\r\nEnd of cleaning");
+
             Console.ReadLine();
         }
 
         static string DeleteFiles()
         {
             string log = "Delete log:";
+            //Получаем коллекцию строк подключений и для каждой БД запускаем поиск лишних файлов и их удаление
             ConnectionStringSettingsCollection collection = ConfigurationManager.ConnectionStrings;
             foreach (ConnectionStringSettings c in collection)
             {
-                if (c.Name != "LocalSqlServer")
-                {
-                    log += "\r\n\r\n" + c.ProviderName + ":";
-                    List<FileInfo> list = GetFilesForOneDatabase(c);
-                    if (list.Count == 0) log += " files not found!";
-                    else log += DelFilesForOneDatabase(list, c);
-                }
+                log += "\r\n\r\n" + c.ProviderName + ":";
+                List<FileInfo> list = GetFilesForOneDatabase(c);
+                if (list.Count == 0) log += " files not found!";
+                else log += DelFilesForOneDatabase(list, c);
             }
             return log;
         }
 
         static List<FileInfo> GetFilesForOneDatabase(ConnectionStringSettings connection)
         {
-            List<FileInfo> result = new List<FileInfo>();
+            //Поиск лишних файлов для каждой БД
+            DatabaseCommand DataCommand = GetDatabaseCommand(connection);
+            List<FileInfo> result = DataCommand.FilesForDelete();
+            return result;
+        }
+
+        static DatabaseCommand GetDatabaseCommand(ConnectionStringSettings connection)
+        {
+            //Выбор нужной логики для работы с БД
+            DatabaseCommand DataCommand = new DatabaseCommand();
             if (connection.ProviderName == "System.Data.SqlClient")
             {
-                DatabaseCommandMSSQL dbconn1 = new DatabaseCommandMSSQL(connection);
-                result = dbconn1.FilesForDelete();
+                DataCommand = new DatabaseCommandMSSQL(connection);
             }
             else if (connection.ProviderName == "Postgresql")
             {
-                DatabaseCommandPostgres dbcomm2 = new DatabaseCommandPostgres(connection);
-                result = dbcomm2.FilesForDelete();
+                DataCommand =  new DatabaseCommandPostgres(connection);
             }
-            return result;
+            return DataCommand;
         }
 
         static string DelFilesForOneDatabase(List<FileInfo> list, ConnectionStringSettings connection)
         {
+            //Удаление лишних файлов по переданному списку
             string log = "";
+            DatabaseCommand DataCommand = GetDatabaseCommand(connection);
             foreach (FileInfo finfo in list)
             {
                 log += "\r\n" + finfo.Path.Trim() + " - ";
-                if (connection.ProviderName == "System.Data.SqlClient")
-                {
-                    DatabaseCommandMSSQL dbconn1 = new DatabaseCommandMSSQL(connection);
-                    log += dbconn1.DelFileOnDB(finfo.Id);
-                }
-                else if (connection.ProviderName == "Postgresql")
-                {
-                    DatabaseCommandPostgres dbcomm2 = new DatabaseCommandPostgres(connection);
-                    log += dbcomm2.DelFileOnDB(finfo.Id);
-                }
+                //Сначала пробуем удалить файл на диске
+                bool success;
+                log += DelFileOnDisk(finfo.Path, out success);
 
-                log += DelFileOnDisk(finfo.Path);
+                //Если файл удалось удалить, то очищаем БД
+                if (success)
+                {
+                    log += DataCommand.DelFileOnDB(finfo.Id);
+                }
             }
             return log;
         }
 
-        static string DelFileOnDisk(string fname)
+        static string DelFileOnDisk(string fname, out bool success)
         {
+            //Удаление файла с диска
+            success = true;
             string result = " disk: ";
             try
             {
@@ -86,15 +93,17 @@ namespace ClearFiles
                 }
                 else result += "not exist!";
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
+                success = false;
                 result += "error - " + ex.Message;
             }
             return result;
         }
 
-        private void SendEmail(string message)
+        static void SendEmail(string message)
         {
+            //Отправка лога на email
             MailAddress from = new MailAddress("delfiles12345@mail.ru");
             MailAddress to = new MailAddress(ConfigurationManager.AppSettings["email"]);
             MailMessage m = new MailMessage(from, to);
@@ -102,10 +111,16 @@ namespace ClearFiles
             m.Body = message;
             m.IsBodyHtml = false;
             SmtpClient smtp = new SmtpClient("smtp.mail.ru", 25);
-            // логин и пароль
             smtp.Credentials = new NetworkCredential("delfiles12345@mail.ru", "u7jncRm2rXyGVzTTPCes");
             smtp.EnableSsl = true;
-            smtp.Send(m);
+            try
+            {
+                smtp.Send(m);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("\r\nНе удалось отправить сообщение - " + ex.Message);
+            }
         }
 
     }

@@ -5,7 +5,7 @@ using System.Data.SqlClient;
 
 namespace ClearFiles
 {
-    class DatabaseCommandMSSQL: IDatabaseCommand
+    class DatabaseCommandMSSQL: DatabaseCommand
     {
         public ConnectionStringSettings connection;
 
@@ -14,7 +14,7 @@ namespace ClearFiles
             connection = _connection;
         }
 
-        public List<FileInfo> FilesForDelete()
+        public override List<FileInfo> FilesForDelete()
         {
             List<FileInfo> fordel = new List<FileInfo>();
 
@@ -46,7 +46,7 @@ namespace ClearFiles
             return fordel;
         }
 
-        public string DelFileOnDB(int Id)
+        public override string DelFileOnDB(int Id)
         {
             string result = " database: ";
             using (SqlConnection conn = new SqlConnection(connection.ConnectionString))
